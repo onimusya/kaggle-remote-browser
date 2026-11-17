@@ -122,13 +122,27 @@ private output. For manual runs, rerun the updated setup cell to install Xvfb
 and stop the previous server before starting the new one. Keep GPU verification
 and visual assertions; headed mode alone does not prove rendering correctness.
 
-For video, use a CDP session created with context.newCDPSession(page):
-start Page.startScreencast, receive Page.screencastFrame events, acknowledge
-every frame using Page.screencastFrameAck, and stop with
-Page.stopScreencast.
+For video, install FFmpeg locally (with libx264), then run:
 
-Encode received frames locally using FFmpeg. Preserve frame timestamps
-or explicitly label any fixed-frame-rate approximation.
+    node --env-file=.env.local .agents/skills/kaggle-remote-browser/scripts/record.mjs https://example.com --seconds 30
+
+The command captures navigation and then records for the requested duration
+after DOM readiness. Ctrl+C saves early once connection/navigation completes.
+It saves `remote-browser-results/<timestamp>/video.mp4`; use `--output` for a
+custom .mp4 path. Existing files are never overwritten. Use `FFMPEG_PATH` if
+the executable is not on PATH.
+
+For custom interactions, import `startRemoteRecording` from
+`scripts/recording.mjs`, call `await startRemoteRecording(session.page,
+{ output: 'remote-browser-results/demo.mp4' })`, then call
+`await recording.stop()` in a finally block before closing the session.
+Stop is idempotent and returns the output path, frame count, and duration.
+
+The recorder uses CDP screencasting, acknowledges every frame, and encodes
+locally with FFmpeg using CDP timestamp intervals in a variable-frame-rate
+MP4. It records the viewport without audio, holds the last frame until stop,
+and cleans up temporary JPEGs. Allow local disk space for the frame sequence.
+Empty captures and encoder failures are errors.
 
 Do not assume Playwright recordVideo works through an arbitrary CDP
 attachment. Confirm the resulting recording exists and plays before

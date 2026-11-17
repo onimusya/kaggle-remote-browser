@@ -25,6 +25,10 @@ notebook/colab-browser.ipynb                   Experimental Colab T4 version
 skills/kaggle-remote-browser/SKILL.md          Agent usage instructions
 skills/kaggle-remote-browser/scripts/browser.mjs
                                              Local connection and test helper
+skills/kaggle-remote-browser/scripts/record.mjs
+                                             Video recording command
+skills/kaggle-remote-browser/scripts/recording.mjs
+                                             Reusable CDP video recorder
 ```
 
 ### 2. Install Playwright globally
@@ -345,6 +349,8 @@ your-project/
   .agents/skills/kaggle-remote-browser/
     SKILL.md
     scripts/browser.mjs
+    scripts/record.mjs
+    scripts/recording.mjs
 ```
 
 Store the connection credentials in that project's `.env.local`. Run from the target project's root:
@@ -381,6 +387,66 @@ node --env-file=.env.local remote-check.mjs
 ```
 
 The helper verifies T4 hardware and creates a task-owned browser context. Use `session.close()` when finished to close that context and disconnect. Keep the notebook running for later tasks, and avoid closing unrelated pages or contexts.
+
+## Capture remote browser video
+
+Install [FFmpeg](https://ffmpeg.org/download.html) locally with the `libx264`
+encoder available, and put `ffmpeg` on `PATH`. Alternatively, set `FFMPEG_PATH`
+to the full executable path. No notebook changes or local browser are required.
+
+Record a remote page to MP4:
+
+```sh
+node --env-file=.env.local ./skills/kaggle-remote-browser/scripts/record.mjs https://example.com --seconds 30
+```
+
+The command opens a task-owned remote page, captures navigation, then records
+for 30 seconds after the DOM loads. Press Ctrl+C to stop and save early; during
+connection or navigation, it finishes that operation before saving. The default
+output is `remote-browser-results/<timestamp>/video.mp4`. Choose another path
+with `--output remote-browser-results/demo.mp4`. Existing files are never
+overwritten. Closing the recording disconnects the client and leaves the
+notebook's browser server running. This command does not require WebGPU on the
+target website, but retains the remote T4 hardware check.
+
+For recording interactions in your own automation, import the recorder:
+
+```js
+import { openRemotePage } from './skills/kaggle-remote-browser/scripts/browser.mjs';
+import { startRemoteRecording } from './skills/kaggle-remote-browser/scripts/recording.mjs';
+
+const session = await openRemotePage();
+let recording;
+try {
+  recording = await startRemoteRecording(session.page, {
+    output: 'remote-browser-results/demo.mp4',
+  });
+  await session.page.goto('https://example.com');
+  // Perform interactions and wait for application-specific readiness here.
+  await session.page.waitForTimeout(5000);
+} finally {
+  try {
+    if (recording) console.log(await recording.stop());
+  } finally {
+    await session.close();
+  }
+}
+```
+
+Stop the recorder before closing its page or context. Frames are temporarily
+stored on local disk and removed after encoding or failure, so allow enough
+disk space for long captures. Empty captures and encoder failures are reported
+as errors.
+
+Capture uses [CDP screencasting](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-startScreencast)
+with JPEG frames and no audio. The variable-frame-rate MP4 uses CDP timestamp
+intervals through FFmpeg's [concat demuxer](https://ffmpeg.org/ffmpeg-formats.html#concat-1),
+holding the final frame until stop. Static pages may emit very few frames.
+Frame delivery can be limited by the tunnel, rendering, and local disk speed;
+use recordings as visual evidence, not as frame-pacing benchmarks.
+
+Run recorder tests with `node --test tests/recording.test.mjs`. Encoding and
+decoding checks require local FFmpeg and are skipped when it is unavailable.
 
 ## Troubleshooting
 
