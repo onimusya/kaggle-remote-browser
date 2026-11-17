@@ -111,6 +111,17 @@ Main-page API instrumentation does not automatically cover Web Workers.
 
 Save screenshots locally using page.screenshot.
 
+Headless mode supports screenshots. If rendering evidence points to a headless
+capture problem, the notebooks also support `remote_browser(minutes=120,
+headed=True)`, which starts headed Chromium on a task-owned Xvfb display.
+For a new Kaggle run, use `node scripts/start-kaggle.mjs --headed` from this
+repository, adding the existing notebook's `--slug` if needed. This starts a new
+run rather than changing the connected browser. Wait for successful GPU/CDP
+verification, then refresh both `.env.local` credentials from the new run's
+private output. For manual runs, rerun the updated setup cell to install Xvfb
+and stop the previous server before starting the new one. Keep GPU verification
+and visual assertions; headed mode alone does not prove rendering correctness.
+
 For video, use a CDP session created with context.newCDPSession(page):
 start Page.startScreencast, receive Page.screencastFrame events, acknowledge
 every frame using Page.screencastFrameAck, and stop with
@@ -144,6 +155,8 @@ Known working server configuration:
 - Exclude the Vulkan SC driver libnvidia-vksc-core.
 - Pass the resulting GPU_ENV to Chromium.
 - Enable Vulkan, VulkanFromANGLE, and DefaultANGLEVulkan.
+- Preserve `--disable-vulkan-surface` in both headless and headed Xvfb modes;
+  a virtual display does not establish native NVIDIA Vulkan surface support.
 - Keep hardware verification and a real compute-readback test.
 
 Respect notebook duration and quota limits. Do not add keepalive or

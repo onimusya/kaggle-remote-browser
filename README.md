@@ -87,6 +87,38 @@ Kaggle GPU/runtime quota and depend on your account's accelerator access.
 Optional flags: `--slug my-browser` changes the notebook name, and
 `--minutes 60` changes the browser session duration (1–720 minutes).
 
+For a headed browser on a virtual Xvfb display (for example, when investigating
+headless rendering or screenshot issues), start a new run with:
+
+```sh
+node scripts/start-kaggle.mjs --headed
+```
+
+Use the same `--slug` as your existing notebook if it has a custom name. This
+updates that notebook and requests a new run. It does not change an already
+running browser in place. Wait for GPU and public CDP verification in the new
+run's logs, then replace both connection values in `.env.local` with the new
+values. The local `browser.mjs` client works with either browser mode.
+
+For manual Kaggle or Colab execution, rerun the updated setup cell (which installs
+Xvfb), stop any existing server cell, then use this call in the server cell:
+
+```python
+await remote_browser(minutes=120, headed=True)
+```
+
+Headed mode starts Xvfb with a dynamically allocated display, sets Chromium's
+`DISPLAY`, and omits the headless flag. Xvfb is stopped with the notebook-owned
+browser processes during cleanup. Inspect `xvfb.log` in the notebook's working
+directory if display startup fails. The Kaggle headed session passed a live
+CDP connection, NVIDIA WebGPU initialization, and screenshot rendering check;
+the Colab headed version remains unverified. Xvfb provides a virtual screen rather
+than a desktop viewer; use CDP screenshots or screencasting for visual evidence.
+Both modes retain `--disable-vulkan-surface` so Vulkan does not require a native
+window-system surface. If WebGPU device creation fails, compare headless mode
+and inspect `gpu-failure.json`, `chrome-system-info.json`, `chrome-gpu.txt`, and
+`chrome.log`; an instance-lifetime error alone does not identify the root cause.
+
 Check the latest run's status, retrieve its logs, or follow live output using the
 launcher (your username is detected automatically):
 
@@ -126,7 +158,7 @@ For command details, see the official [Kaggle CLI notebook documentation](https:
 The second cell ends with:
 
 ```python
-await remote_browser(minutes=120)
+await remote_browser(minutes=120, headed=False)
 ```
 
 This sets a two-hour session limit. The function accepts 1–720 minutes, subject to Kaggle's own runtime and quota limits. Interrupt the cell to stop the browser and tunnel. Restarting it generates a new connection URL and token.
@@ -197,7 +229,7 @@ remote-control workflow.
 node --env-file=.env.local ./skills/kaggle-remote-browser/scripts/browser.mjs https://webgpu.studio/particle-simulator
 ```
 
-The server defaults to 120 minutes; edit `await remote_browser(minutes=120)` in
+The server defaults to 120 minutes; edit `await remote_browser(minutes=120, headed=False)` in
 the final code cell to change that. Colab may end the runtime sooner. Interrupt
 the cell when finished, and clear credential-bearing output before sharing.
 Runtime files are temporary; the notebook does not mount Google Drive.
@@ -354,6 +386,8 @@ The helper verifies T4 hardware and creates a task-owned browser context. Use `s
 
 | Problem | What to check |
 | --- | --- |
+| `requestDevice` reports `A valid external Instance reference no longer exists` | Ensure the Chrome launch arguments include `--disable-vulkan-surface` in headed mode as well as headless mode. An earlier headed-mode version omitted it. Retry the server cell, compare `headed=False`, and inspect the GPU diagnostics printed above the traceback. Keep NVIDIA hardware and compute verification enabled. |
+| Server cell reports `No module named 'playwright'` | Run the GPU setup cell (starts with `import os`) successfully in the same notebook session before the server cell. It installs Python Playwright and Chromium; global npm Playwright on your computer is separate. Rerun setup after a runtime restart. |
 | Drive upload reports HTTP 403 | The uploader prints Google's structured reason and a matching hint. `SERVICE_DISABLED` or `accessNotConfigured` means enable Drive API in the quota project and allow time for propagation; `ACCESS_TOKEN_SCOPE_INSUFFICIENT` or `insufficientPermissions` means sign in again with Drive access. Retry the upload command directly after fixing the cause; project creation does not need repeating. |
 | Monitoring reports `Permission 'kernels.get' was denied` | Run `kaggle kernels list --mine` and use the owner and slug from the notebook URL: `node scripts/start-kaggle.mjs --owner OWNER --slug NOTEBOOK-SLUG --follow`. The default slug is `kaggle-remote-browser`; imported or renamed notebooks may differ. `--owner` selects the target, not the authenticated account. Private notebooks require account access. |
 | Kaggle CLI reports `No module named 'six'` | Run `uv tool install --with six kaggle`, then retry `kaggle auth login`. This adds the dependency inside the CLI's isolated environment. |

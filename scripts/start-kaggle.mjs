@@ -14,6 +14,7 @@ Options:
   --owner NAME    Override owner (default: authenticated Kaggle username)
   --slug NAME     Notebook slug (default: kaggle-remote-browser)
   --minutes N     Browser session duration, 1–720 (default: 120)
+  --headed        Start Chrome on an Xvfb display instead of headless
   --dry-run       Validate and preview without uploading or starting a run
   --status        Show latest run status without starting a run
   --logs          Print latest run logs without starting a run
@@ -73,6 +74,7 @@ async function main() {
       owner: { type: 'string' },
       slug: { type: 'string', default: 'kaggle-remote-browser' },
       minutes: { type: 'string', default: '120' },
+      headed: { type: 'boolean', default: false },
       'dry-run': { type: 'boolean', default: false },
       status: { type: 'boolean', default: false },
       logs: { type: 'boolean', default: false },
@@ -97,6 +99,9 @@ async function main() {
     throw new Error('--minutes must be an integer between 1 and 720.');
   }
   const monitor = values.status || values.logs || values.follow;
+  if (monitor && values.headed) {
+    throw new Error('--headed applies when starting a new run; omit it when monitoring an existing run.');
+  }
   if (monitor && values['dry-run']) {
     throw new Error('--dry-run previews an upload; use it separately from --status, --logs, or --follow.');
   }
@@ -123,9 +128,9 @@ async function main() {
     cell.outputs = [];
     cell.execution_count = null;
     const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
-    cell.source = source.replace(/await remote_browser\(minutes=\d+\)/g, () => {
+    cell.source = source.replace(/await remote_browser\(minutes=\d+(?:, headed=(?:True|False))?\)/g, () => {
       replaced++;
-      return `await remote_browser(minutes=${minutes})`;
+      return `await remote_browser(minutes=${minutes}, headed=${values.headed ? 'True' : 'False'})`;
     });
   }
   if (replaced !== 1) {
@@ -159,6 +164,7 @@ async function main() {
       dryRun: true,
       source: fileURLToPath(notebookURL),
       browserSessionMinutes: minutes,
+      browserMode: values.headed ? 'headed-xvfb' : 'headless',
       metadata,
     }, null, 2));
     return;
@@ -168,7 +174,7 @@ async function main() {
   try {
     await writeFile(path.join(staging, metadata.code_file), JSON.stringify(notebook, null, 2));
     await writeFile(path.join(staging, 'kernel-metadata.json'), JSON.stringify(metadata, null, 2));
-    console.log(`Uploading and starting private notebook ${id} (T4, ${minutes}-minute browser session).`);
+    console.log(`Uploading and starting private notebook ${id} (T4, ${values.headed ? 'headed Xvfb' : 'headless'}, ${minutes}-minute browser session).`);
     if (!runKaggle(['kernels', 'push', '-p', staging, '--accelerator', 'NvidiaTeslaT4'], 'Kaggle upload/run request failed. Check the CLI output, authentication, and GPU availability.')) return;
     console.log(`\nRun requested. This does not yet confirm browser readiness.
 Notebook: https://www.kaggle.com/code/${id}
