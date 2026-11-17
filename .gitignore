@@ -1,0 +1,16 @@
+# Local credentials; keep example templates available for version control.
+.env
+.env.*
+!.env*.example
+
+# Google OAuth client configuration and cached login tokens.
+.colab-auth/
+
+# Generated browser reports and screenshots.
+remote-browser-results/
+remote-page.png
+
+# Local dependencies and notebook checkpoints.
+node_modules/
+.ipynb_checkpoints/
+__pycache__/
